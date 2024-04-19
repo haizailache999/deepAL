@@ -14,6 +14,7 @@ import torch.nn.init as init
 from AL_model import AL_Net,Architect
 from get_idx import get_idxs
 from inter_dataset import myDataset
+from sklearn.mixture import GaussianMixture
 import sys
 
 class Net:
@@ -26,9 +27,9 @@ class Net:
     def train(self, data):
         n_epoch = self.params['n_epoch']
         #print(self.params)
-        dim = data.X.shape[1:]
-        #print(dim)
-        self.clf = self.net(dim = dim, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
+        self.dim = data.X.shape[1:]
+        #print("this is dimension",dim)
+        self.clf = self.net(dim = self.dim, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
         self.clf.train()
         if self.params['optimizer'] == 'Adam':
             optimizer = optim.Adam(self.clf.parameters(), **self.params['optimizer_args'])
@@ -46,30 +47,67 @@ class Net:
                 loss = F.cross_entropy(out, y)
                 loss.backward()
                 optimizer.step()
-    def train_1(self, x,y):
+    def train_1(self, loader):
         #print(self.params)
         #dim = data.X.shape[1:]
         #print(dim)
         #self.clf_0 = self.net(dim = 32*32*3, pretrained = True, num_classes = 10).to(self.device)
-        optimizer = optim.Adam([{'params':[ param for name, param in self.clf.named_parameters() if '_1' not in name]}], **self.params['optimizer_args'])
-        self.clf.train()
+        optimizer = optim.Adam([{'params':[ param for name, param in self.clf_1.named_parameters() if '_1' not in name]}], **self.params['optimizer_args1'])
+        self.clf_1.train()
         #loader = loader
         #output=torch.empty(0,2)
         #for batch_idx,(x, y, idxs) in enumerate(loader):
-        x, y = x.to(self.device), y.to(self.device)
-        out, e1 = self.clf(x)
-        loss = F.cross_entropy(out, y)
-        loss.backward()
-        optimizer.step()
+        file = open("./loss_check7.txt", 'a')
+        #x, y = x.to(self.device), y.to(self.device)
+        for i in tqdm(range(200)):
+            optimizer.zero_grad()
+            score,out,y = self.clf_1(loader)
+            loss = F.cross_entropy(out, y.to('cuda'))
+            loss.backward()
+            optimizer.step()
+            '''for name, parms in self.clf_1.named_parameters():	
+            #print('after-->name:', name)
+            #print('after-->para:', parms)
+            #print('after-->grad_requirs:',parms.requires_grad)
+                if parms.grad is not None:
+                    if "_1" not in name:
+                        print('after-->grad_value:',name)
+            #print("after===")
+            #break'''
+            file.write("loss:")
+            file.write(str(loss.item()))
+            file.write("  ")
+        #file.write("\n")
+        file.close()
         #output=torch.cat((output, out.to('cpu')), 0)
         #return output
+    def train_2_1(self, dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+        self.clf_1 = self.net(dim = self.dim, pretrained = True, num_classes = self.params['num_class'],forward_param=1,dataset=dataset,net=net,args_input=args_input,args_task=args_task,NUM_QUERY=NUM_QUERY,labeled_idxs=labeled_idxs,loader=loader).to(self.device)
 
-    def train_2(self, dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,loader):
-        self.clf_1 = self.net(dim = 32*32*3, pretrained = True, num_classes = 10,forward_param=1,dataset=dataset,net=net,args_input=args_input,args_task=args_task,NUM_QUERY=NUM_QUERY,unlabeled_idxs=unlabeled_idxs,loader=loader).to(self.device)
+    def train_2(self, dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+        #self.clf_1 = self.net(dim = self.dim, pretrained = True, num_classes = self.params['num_class'],forward_param=1,dataset=dataset,net=net,args_input=args_input,args_task=args_task,NUM_QUERY=NUM_QUERY,labeled_idxs=labeled_idxs,loader=loader).to(self.device)
         self.clf_1.train()
         architect = Architect(self.clf_1)
-        score,test_next_valid,test_next_label=self.clf_1(loader)
-        architect.step(test_next_valid,test_next_label,self.device,score)
+        torch.autograd.set_detect_anomaly(True)
+        file = open("./loss_check8.txt", 'a')
+        for i in tqdm(range(200)):
+            '''for name, parms in self.clf_1.named_parameters():
+                #if parms.grad is not None:
+                    #if '_1' in name:
+                print('before1-->grad_value:',name)'''
+            score,test_next_valid,test_next_label=self.clf_1(loader)
+            #print("pp",len(loader.dataset))
+            loss,loss1,loss2=architect.step(test_next_valid,test_next_label,self.device,score,len(loader.dataset))
+            file.write("loss:")
+            file.write(str(loss.item()))
+            file.write("loss1:")
+            file.write(str(loss1.item()))
+            file.write("loss2:")
+            file.write(str(loss2))
+            #file.write("\n")
+            file.write("\n")
+        file.write("\n")
+        file.close()
         #return idxs
 
     def predict(self, data):
@@ -83,6 +121,18 @@ class Net:
                 pred = out.max(1)[1]
                 preds[idxs] = pred.cpu()
         return preds
+
+    def predict2(self, loader,unlabeled_idxs,init_seed):
+        self.clf_1.eval()
+        result=[]
+        with torch.no_grad():
+            score,test_next_valid,test_next_label=self.clf_1(loader)
+        for i in range(len(score)):
+            if score[i]==1:
+                result.append(unlabeled_idxs[i])
+            if len(result)>=init_seed:
+                break
+        return result
 
     def predict1(self, dataloader):
         self.clf.eval()
@@ -125,7 +175,7 @@ class Net:
 	
     def predict_prob1(self, loader):
         self.clf.eval()
-        probs = torch.zeros([128, 10])
+        probs = torch.zeros([len(loader.dataset), self.params['num_class']])
         loader = loader
         with torch.no_grad(): 
             for x, y, idxs in loader:
@@ -164,7 +214,7 @@ class Net:
 
     def predict_prob_dropout_split1(self, loader,n_drop=10):
         self.clf.train()
-        probs = torch.zeros([n_drop, 128, 10])
+        probs = torch.zeros([n_drop, len(loader.dataset), self.params['num_class']])
         loader=loader
         #loader = DataLoader(data, shuffle=False, **self.params['loader_te_args'])
         for i in range(n_drop):
@@ -192,7 +242,8 @@ class Net:
 
     def get_embeddings1(self, loader):
         self.clf.eval()
-        embeddings = torch.zeros([128, self.clf.get_embedding_dim()])
+        #print(len(loader.dataset))
+        embeddings = torch.zeros([len(loader.dataset), self.clf.get_embedding_dim()])
         loader = loader
         with torch.no_grad():
             for x, y, idxs in loader:
@@ -228,7 +279,7 @@ class Net:
         self.clf.eval()
         embDim = self.clf.get_embedding_dim()
         nLab = self.params['num_class']
-        embeddings = np.zeros([128, embDim * nLab])
+        embeddings = np.zeros([len(loader.dataset), embDim * nLab])
 
         loader = loader
         with torch.no_grad():
@@ -269,7 +320,7 @@ class MNIST_Net(nn.Module):
 		return self.dim
 
 class CIFAR10_Net(nn.Module):
-	def __init__(self, dim = 32 * 32*3, pretrained=False, num_classes = 10,forward_param=0,dataset=None,net=None,args_input=None,args_task=None,NUM_QUERY=None,unlabeled_idxs=None,loader=None):
+	def __init__(self, dim = 32 * 32*3, pretrained=False, num_classes = 10,forward_param=0,dataset=None,net=None,args_input=None,args_task=None,NUM_QUERY=None,labeled_idxs=None,loader=None):
 		super().__init__()
 		resnet18 = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
 		features_tmp = nn.Sequential(*list(resnet18.children())[:-1])
@@ -277,98 +328,91 @@ class CIFAR10_Net(nn.Module):
 		self.features = nn.Sequential(*list(features_tmp))
 		self.classifier = nn.Linear(512, num_classes)
 		self.dim = resnet18.fc.in_features
-		#self.softmax=torch.nn.Softmax(dim=1)
 		resnet18_1=models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
 		features_tmp_1=nn.Sequential(*list(resnet18_1.children())[:-1])
 		features_tmp_1[0] = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
 		self.features_1 = nn.Sequential(*list(features_tmp_1))
-		self.classifier_1 = nn.Linear(512, 8)
+		self.classifier_1 = nn.Linear(512, 2)
 		self.forward_param=forward_param
 		self._arch_parameters=[]
-		#print(self.features_1)
 		for name,parameters in self.features_1.named_parameters():
 			self._arch_parameters.append(parameters)
 		self._arch_parameters.append(self.classifier_1.weight.data)
-		self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.unlabeled_idxs=dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs
-		self.loader=loader
+		self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.labeled_idxs=dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs
+		#self.loader=loader
 	def arch_parameters(self):
 		return self._arch_parameters
     
-	def forward_mid(self,output,dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,loader):
-		output_list=output.detach().numpy()
-		#print(unlabeled_idxs)
-		AL_numpy=get_idxs(dataset, net, args_input, args_task,NUM_QUERY,unlabeled_idxs,loader)
-		score=np.sum(AL_numpy*output_list,axis=1)
-		interval_max=st.norm.interval(0.90,loc=np.mean(score),scale=st.sem(score))[1]
-		result=np.zeros(score.shape)
+	def forward_mid(self,output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+		#output_list=output.detach().numpy()
+		AL_numpy=get_idxs(dataset, net, args_input, args_task,NUM_QUERY,labeled_idxs,loader)
+		#score=np.sum(AL_numpy*output_list,axis=1)
+		score=torch.sum(torch.from_numpy(AL_numpy).requires_grad_().to('cuda')*output,dim=1)
+		#print("score",score.requires_grad)
+		#score=np.sum(output_list,axis=1)
+		#interval_max=st.norm.interval(0.90,loc=np.mean(score),scale=st.sem(score))[1]
+		gmm = GaussianMixture(n_components=3)
+		new_score=score.cpu().detach().numpy()
+		gmm.fit(new_score.reshape(-1, 1))
+		confidence_interval = gmm.sample(n_samples=10000)[0]
+		interval_max = np.percentile(confidence_interval, 98)
+		#sigmoid_output = 1 / (1 + torch.exp(-score))
+		sigmoid_output=torch.sigmoid(100 * (interval_max-score))
+		#print("thresholded_output",sigmoid_output.requires_grad)
+		'''one_tensor = torch.tensor(1.0, requires_grad=True)
+		zero_tensor = torch.tensor(0.0, requires_grad=True)
+		thresholded_output = torch.where(sigmoid_output >= 0.2,one_tensor, zero_tensor)'''
+		#print("thresholded_output",thresholded_output.requires_grad)
+		'''result=np.zeros(score.shape)
 		for i in range(score.size):
 			if score[i]>interval_max:
-				result[i]=1
+				result[i]=0.1
 			else:
-				result[i]=0
-		'''ind_200 = np.argpartition(score, -200)[-200:]
-		ind_100 = np.argpartition(score, -100)[-100:]
-		unlabeled_200=np.zeros(200)
-		for num_200_pos,num_200 in enumerate(ind_200):
-			unlabeled_200[num_200_pos]=unlabeled_idxs[num_200]
-		unlabeled_100=np.zeros((100,), dtype=int)
-		for num_100_pos,num_100 in enumerate(ind_100):
-			unlabeled_100[num_100_pos]=int(unlabeled_idxs[num_100])
-		#print(unlabeled_200.shape,unlabeled_100.shape)
-		mask = np.isin(unlabeled_200, unlabeled_100)
-		filtered_array = unlabeled_200[~mask]
-		unlabeled_idxs_list=unlabeled_idxs.tolist()
-		next_idxs=[]
-		for element in filtered_array:
-			if element not in unlabeled_idxs_list:
-				print("empty",element)
-			else:
-				next_idxs.append(unlabeled_idxs_list.index(element))
-		print("next_idxs")'''
-		return result
+				result[i]=0.9'''
+		#print("the",thresholded_output.device)
+		return sigmoid_output
 
 	def forward(self, x):
-		dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs=self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.unlabeled_idxs
-		loader=self.loader
+		dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs=self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.labeled_idxs
+		loader=x
 		if self.forward_param==0:
 			feature  = self.features(x)
 			x = feature.view(feature.size(0), -1)		
 			output = self.classifier(x)
 			return output, x
 		else:
-			#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
-			#print(unlabeled_data[0])
-			#loader = DataLoader(unlabeled_data, shuffle=False, batch_size=24000,num_workers=0)
-			ids,unlabeled_data=dataset.get_unlabeled_data()
-			output=torch.empty(0,8)
-			#print("yes")
+			ids,labeled_data=dataset.get_labeled_data()
+			output=torch.empty(0,2).to('cuda')
+			#with torch.no_grad():
+			#print(loader[0])
 			for batch_idx,(x, y, idxs) in enumerate(loader):
+				#print("count please")
 				x=x.to('cuda')
-			x = x
-			feature1  = self.features_1(x)
-			x = feature1.view(feature1.size(0), -1)
-			out=self.classifier_1(x)	
-			output=torch.cat((output, out.to('cpu')), 0)
-			score=self.forward_mid(output,dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,loader)
-			#mydataset=myDataset(next_idxs,unlabeled_data)
+				y=y.to('cuda')
+				x = x.requires_grad_(True)
+			#print("loader x shape",x.shape)
+			#print("allocate",x.shape)
+				feature1  = self.features_1(x)
+				feature2 = feature1.view(feature1.size(0), -1)
+				out=self.classifier_1(feature2)	
+				output=torch.cat((output, out), 0)
+				#x=x.to('cpu')
+				#feature1=feature1.to('cpu')
+				#del feature1,x, out
+				#torch.cuda.empty_cache()
+			#print("output shape",output.shape)
+			#print("grad?",self.classifier_1.grad)
+			score=self.forward_mid(output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
+			#print("score",score.requires_grad)
 			myloader=loader
-			#print("yes1")
-			#q_idxs=ind_100
-			#print("yes")
-			#myloader=tqdm(myloader,file=sys.stdout)
-			#test_next=torch.empty(0,3,32,32)
-			#print(type(test_next))
 			for i_batch,batch_data in enumerate(myloader):
 				test_next,test_next_label,idxs=batch_data
-				#print(test_next_1.shape)
-				#test_next=torch.cat((test_next,test_next_1),0)
 				feature  = self.features(test_next.to('cuda'))
 				test_next = feature.view(feature.size(0), -1)		
 				test_next_valid = self.classifier(test_next)
-			#test_next_valid=self.clf(test_next.to(self.device))
-			#self.architect.step(test_next_valid[0],test_next_label,self.device)
-			#print(test_next_valid)
-			#print(test_next_valid.shape,test_next_label.shape)
+			'''feature  = self.features(x.to('cuda'))
+			test_next = feature.view(feature.size(0), -1)		
+			test_next_valid = self.classifier(test_next)'''
 			return score,test_next_valid,test_next_label
 	
 	def get_embedding_dim(self):
@@ -392,24 +436,84 @@ class openml_Net(nn.Module):
         return self.embSize
 
 class PneumoniaMNIST_Net(nn.Module):
-	def __init__(self, dim = 28 * 28, pretrained=False, num_classes = 10):
+	def __init__(self, dim = 32 * 32*3, pretrained=False, num_classes = 10,forward_param=0,dataset=None,net=None,args_input=None,args_task=None,NUM_QUERY=None,labeled_idxs=None,loader=None):
 		super().__init__()
-		resnet18 = models.resnet18(pretrained=pretrained)
+		resnet18 = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
 		features_tmp = nn.Sequential(*list(resnet18.children())[:-1])
 		features_tmp[0] = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
 		self.features = nn.Sequential(*list(features_tmp))
 		self.classifier = nn.Linear(512, num_classes)
 		self.dim = resnet18.fc.in_features
-		
-	
+		resnet18_1=models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+		features_tmp_1=nn.Sequential(*list(resnet18_1.children())[:-1])
+		features_tmp_1[0] = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
+		self.features_1 = nn.Sequential(*list(features_tmp_1))
+		self.classifier_1 = nn.Linear(512, 7)
+		self.forward_param=forward_param
+		self._arch_parameters=[]
+		for name,parameters in self.features_1.named_parameters():
+			self._arch_parameters.append(parameters)
+		self._arch_parameters.append(self.classifier_1.weight.data)
+		self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.labeled_idxs=dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs
+		#self.loader=loader
+	def arch_parameters(self):
+		return self._arch_parameters
+    
+	def forward_mid(self,output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+		output_list=output.detach().numpy()
+		AL_numpy=get_idxs(dataset, net, args_input, args_task,NUM_QUERY,labeled_idxs,loader)
+		score=np.sum(AL_numpy*output_list,axis=1)
+		#interval_max=st.norm.interval(0.90,loc=np.mean(score),scale=st.sem(score))[1]
+		gmm = GaussianMixture(n_components=3)
+		gmm.fit(score.reshape(-1, 1))
+		confidence_interval = gmm.sample(n_samples=10000)[0]
+		interval_max = np.percentile(confidence_interval, 95)
+		result=np.zeros(score.shape)
+		for i in range(score.size):
+			if score[i]>interval_max:
+				result[i]=1
+			else:
+				result[i]=0
+		return result
+
 	def forward(self, x):
-		feature  = self.features(x)
-		x = feature.view(feature.size(0), -1)		
-		output = self.classifier(x)
-		return output, x
+		dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs=self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.labeled_idxs
+		loader=x
+		if self.forward_param==0:
+			feature  = self.features(x)
+			x = feature.view(feature.size(0), -1)		
+			output = self.classifier(x)
+			return output, x
+		else:
+			ids,labeled_data=dataset.get_labeled_data()
+			output=torch.empty(0,7)
+			#with torch.no_grad():
+			for batch_idx,(x, y, idxs) in enumerate(loader):
+				x=x.to('cuda')
+				x = x
+				#print("loader x shape",x.shape)
+				#print("allocate",x.shape)
+				feature1  = self.features_1(x)
+				x = feature1.view(feature1.size(0), -1)
+				out=self.classifier_1(x)	
+				output=torch.cat((output, out.to('cpu')), 0)
+				x=x.to('cpu')
+				feature1=feature1.to('cpu')
+				del feature1,x, out
+				torch.cuda.empty_cache()
+			#print("output shape",output.shape)
+			score=self.forward_mid(output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
+			myloader=loader
+			for i_batch,batch_data in enumerate(myloader):
+				test_next,test_next_label,idxs=batch_data
+				feature  = self.features(test_next.to('cuda'))
+				test_next = feature.view(feature.size(0), -1)		
+				test_next_valid = self.classifier(test_next)
+			return score,test_next_valid,test_next_label
 	
 	def get_embedding_dim(self):
 		return self.dim
+
 
 class waterbirds_Net(nn.Module):
 	def __init__(self, dim = 28 * 28, pretrained=False, num_classes = 10):
