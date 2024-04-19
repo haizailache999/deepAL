@@ -7,6 +7,7 @@ from pprint import pprint
 from AL_model import AL_Net,Architect
 torch.set_printoptions(profile='full')
 from torch.utils.data import DataLoader, Subset
+from torch.utils.data import TensorDataset
 from torch.autograd import Variable
 import get_idx
 from inter_dataset import myDataset
@@ -25,6 +26,7 @@ torch.cuda.empty_cache()
 
 # parameters
 if __name__ == '__main__':
+	warnings.filterwarnings('ignore')
 	args_input = arguments.get_args()
 	NUM_QUERY = args_input.batch
 	NUM_INIT_LB = args_input.initseed
@@ -56,6 +58,7 @@ if __name__ == '__main__':
 	iteration = args_input.iteration
 
 	all_acc = []
+	all_acc1=[]
 	acq_time = []
 
 	# repeate # iteration trials
@@ -81,7 +84,7 @@ if __name__ == '__main__':
 
 		#record acc performance
 		acc = np.zeros(NUM_ROUND + 1)
-
+		acc1 = np.zeros(20)
 		# only for special cases that need additional data
 		new_X = torch.empty(0)
 		new_Y = torch.empty(0)
@@ -101,120 +104,150 @@ if __name__ == '__main__':
 		print('Round 0\ntesting accuracy {}'.format(acc[0]))
 		print('\n')
 		
-		unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
-		num_train=len(unlabeled_data)
-		indices = list(range(num_train))
+		#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
+		labeled_idxs,labeled_data=dataset.get_labeled_data()
+		num_train=len(labeled_data)
 		split = int(np.floor(0.5 * num_train))
 
+		# round 1 to rd
+			#print("inter_round",inter_round)
+		indices = np.random.permutation(len(labeled_data))
 		train_queue = torch.utils.data.DataLoader(
-			unlabeled_data, batch_size=NUM_QUERY,
+			labeled_data, batch_size=NUM_QUERY,
 			sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[:split]),
 			pin_memory=True, num_workers=2)
 
 		valid_queue = torch.utils.data.DataLoader(
-			unlabeled_data, batch_size=NUM_QUERY,
+			labeled_data, batch_size=NUM_QUERY,
 			sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[split:num_train]),
 			pin_memory=True, num_workers=2)
-
-		# round 1 to rd
-		for step, (input, target,idxs) in enumerate(tqdm(train_queue,file=sys.stdout)):
-			input = Variable(input, requires_grad=False).cuda()
-			target = Variable(target, requires_grad=False).cuda()
-			input_search, target_search,idxs1 = next(iter(valid_queue))
-			#input_search = Variable(input_search, requires_grad=False).cuda()
-			#target_search = Variable(target_search, requires_grad=False).cuda()
-			subset = Subset(valid_queue.dataset, indices=range(input_search.size(0)))
-			new_dataloader = DataLoader(subset, batch_size=NUM_QUERY, shuffle=True)
-			#high_confident_idx = []
-			#high_confident_pseudo_label = []
-			# query  
-			#unlabeled_data[0] tensor data, [1] label, [2] 0/1
-			#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
-			#print(len(unlabeled_data))
-			#loader = DataLoader(unlabeled_data, shuffle=False, batch_size=128,num_workers=0)
-			#for batch_idx,(x, y, idxs) in enumerate(loader):
-				#x=x.to(device)
-			'''output=torch.empty(0,2)
-			loader=tqdm(loader, file=sys.stdout)
-			model1.train()
-			for batch_idx,(x, y, idxs) in enumerate(loader):
-				x=x.to(device)
-				out=model1(x)     #(batch,17)
-				output=torch.cat((output, out.to('cpu')), 0)
-			output=strategy.train_1(loader)
-			print(output.shape)
-			output_list=output.to('cpu').detach().numpy()
-			AL_numpy=get_idx.get_idxs(dataset, net, args_input, args_task,NUM_QUERY,unlabeled_idxs)
-			print(AL_numpy.shape)
-			score=np.sum(AL_numpy*output_list,axis=1)
-			print("get score")
-			ind_200 = np.argpartition(score, -200)[-200:]
-			ind_100 = np.argpartition(score, -100)[-100:]
-			unlabeled_200=np.zeros(200)
-			for num_200_pos,num_200 in enumerate(ind_200):
-				unlabeled_200[num_200_pos]=unlabeled_idxs[num_200]
-			unlabeled_100=np.zeros(200)
-			for num_100_pos,num_100 in enumerate(ind_100):
-				unlabeled_100[num_100_pos]=unlabeled_idxs[num_100]
-			mask = np.isin(unlabeled_200, unlabeled_100)
-			filtered_array = unlabeled_200[~mask]
-			#print("filt",len(filtered_array))
-			#print(len(unlabeled_idxs))
-			unlabeled_idxs_list=unlabeled_idxs.tolist()
-			next_idxs=[]
-			for element in filtered_array:
-				if element not in unlabeled_idxs_list:
-					print("empty",element)
+			#print("this is valid queue",len(valid_queue.dataset))
+		for inter_round in range(3):
+			for step, (input, target,idxs) in enumerate(tqdm(train_queue,file=sys.stdout)):
+				input = Variable(input, requires_grad=False).cuda()
+				target = Variable(target, requires_grad=False).cuda()
+				input_search, target_search,idxs1 = next(iter(valid_queue))
+				#print(idxs1)
+				#input_search = Variable(input_search, requires_grad=False).cuda()
+				#target_search = Variable(target_search, requires_grad=False).cuda()
+				#subset = Subset(valid_queue.dataset, indices=range(step*input_search.size(0),(step+1)*input_search.size(0)))
+				subset= TensorDataset(input_search,target_search,torch.arange(0, input_search.size(0), step=1))
+				new_dataloader = DataLoader(subset, batch_size=NUM_QUERY, shuffle=True)
+				#first_subset=Subset(train_queue.dataset, indices=range(step*input.size(0),(step+1)*input.size(0)))
+				first_subset=TensorDataset(input,target,torch.arange(0, input.size(0), step=1))
+				first_dataloader = DataLoader(first_subset, batch_size=NUM_QUERY, shuffle=True)
+				#high_confident_idx = []
+				#high_confident_pseudo_label = []
+				# query  
+				#unlabeled_data[0] tensor data, [1] label, [2] 0/1
+				#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
+				#print(len(unlabeled_data))
+				#loader = DataLoader(unlabeled_data, shuffle=False, batch_size=128,num_workers=0)
+				#for batch_idx,(x, y, idxs) in enumerate(loader):
+					#x=x.to(device)
+				'''output=torch.empty(0,2)
+				loader=tqdm(loader, file=sys.stdout)
+				model1.train()
+				for batch_idx,(x, y, idxs) in enumerate(loader):
+					x=x.to(device)
+					out=model1(x)     #(batch,17)
+					output=torch.cat((output, out.to('cpu')), 0)
+				output=strategy.train_1(loader)
+				print(output.shape)
+				output_list=output.to('cpu').detach().numpy()
+				AL_numpy=get_idx.get_idxs(dataset, net, args_input, args_task,NUM_QUERY,unlabeled_idxs)
+				print(AL_numpy.shape)
+				score=np.sum(AL_numpy*output_list,axis=1)
+				print("get score")
+				ind_200 = np.argpartition(score, -200)[-200:]
+				ind_100 = np.argpartition(score, -100)[-100:]
+				unlabeled_200=np.zeros(200)
+				for num_200_pos,num_200 in enumerate(ind_200):
+					unlabeled_200[num_200_pos]=unlabeled_idxs[num_200]
+				unlabeled_100=np.zeros(200)
+				for num_100_pos,num_100 in enumerate(ind_100):
+					unlabeled_100[num_100_pos]=unlabeled_idxs[num_100]
+				mask = np.isin(unlabeled_200, unlabeled_100)
+				filtered_array = unlabeled_200[~mask]
+				#print("filt",len(filtered_array))
+				#print(len(unlabeled_idxs))
+				unlabeled_idxs_list=unlabeled_idxs.tolist()
+				next_idxs=[]
+				for element in filtered_array:
+					if element not in unlabeled_idxs_list:
+						print("empty",element)
+					else:
+						next_idxs.append(unlabeled_idxs_list.index(element))
+				#next_idxs = [np.where(unlabeled_idxs == element) for element in filtered_array]
+				mydataset=myDataset(next_idxs,unlabeled_data)
+				myloader=DataLoader(mydataset, shuffle=False, batch_size=10,num_workers=0)
+				q_idxs=ind_100'''
+				'''if 'CEALSampling' in args_input.ALstrategy:
+					q_idxs, new_data = strategy.query(NUM_QUERY, rd, option = args_input.ALstrategy[13:])
 				else:
-					next_idxs.append(unlabeled_idxs_list.index(element))
-			#next_idxs = [np.where(unlabeled_idxs == element) for element in filtered_array]
-			mydataset=myDataset(next_idxs,unlabeled_data)
-			myloader=DataLoader(mydataset, shuffle=False, batch_size=10,num_workers=0)
-			q_idxs=ind_100'''
-			'''if 'CEALSampling' in args_input.ALstrategy:
-				q_idxs, new_data = strategy.query(NUM_QUERY, rd, option = args_input.ALstrategy[13:])
-			else:
-				q_idxs = strategy.query(NUM_QUERY)'''
-			'''myloader=tqdm(myloader,file=sys.stdout)
-			strategy.predict1(myloader)'''
-			strategy.train_2(dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,new_dataloader)
-			# update
-			#strategy.update(q_idxs)
-			strategy.train_1(input,target)
-			#train
-			'''if 'CEALSampling' in args_input.ALstrategy:
-				strategy.train(new_data)
-			elif args_input.ALstrategy == 'WAAL':
-				strategy.train(model_name = args_input.ALstrategy)
-			else:
-			    strategy.train()'''
-			#strategy.train()
-			#clf=net(dim = 32*32*3, pretrained = False, num_classes = 10).to(device)
-        	#print(dim)
-        	#clf = net(dim = 32*32*3, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
-			#net=net.to(device)
-			#clf.eval()
-			'''for i_batch,batch_data in enumerate(myloader):
-				test_next,test_next_label=batch_data
-				test_next_valid=net(test_next.to(device))
-				architect.step(test_next_valid,test_next_label,device)'''
-		
-			# round rd accuracy
-			'''preds = strategy.predict(dataset.get_test_data())
+					q_idxs = strategy.query(NUM_QUERY)'''
+				'''myloader=tqdm(myloader,file=sys.stdout)
+				strategy.predict1(myloader)'''
+				if inter_round==0:
+					strategy.train_2_1(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
+				#for train_epochs in range(10):
+					#print("train_epochs",train_epochs)
+				strategy.train_2(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
+					# update
+					#strategy.update(q_idxs)
+				strategy.train_1(first_dataloader)
+				#train
+				'''if 'CEALSampling' in args_input.ALstrategy:
+					strategy.train(new_data)
+				elif args_input.ALstrategy == 'WAAL':
+					strategy.train(model_name = args_input.ALstrategy)
+				else:
+					strategy.train()'''
+				#strategy.train()
+				#clf=net(dim = 32*32*3, pretrained = False, num_classes = 10).to(device)
+				#print(dim)
+				#clf = net(dim = 32*32*3, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
+				#net=net.to(device)
+				#clf.eval()
+				'''for i_batch,batch_data in enumerate(myloader):
+					test_next,test_next_label=batch_data
+					test_next_valid=net(test_next.to(device))
+					architect.step(test_next_valid,test_next_label,device)'''
+			
+				# round rd accuracy
+				'''preds = strategy.predict(dataset.get_test_data())
+				acc[rd] = dataset.cal_test_acc(preds)
+				print('testing accuracy {}'.format(acc[rd]))
+				print('\n')'''
+
+				#torch.cuda.empty_cache()
+			preds = strategy.predict1(valid_queue)
+			#acc1[inter_round] = dataset.cal_test_acc(preds)
+			acc1[inter_round]=(valid_queue.dataset.Y==preds).sum().item()/len(preds)
+			print('validation1 accuracy {}'.format(acc1[inter_round]))
+			print('\n')
+		for rd in range(1, NUM_ROUND+1):
+			print('Round {}'.format(rd))
+			unlabeled_idxs,unlabeled_data=dataset.get_unlabeled_data()
+			untrain_loader = torch.utils.data.DataLoader(
+				unlabeled_data, batch_size=NUM_QUERY,
+				pin_memory=True, num_workers=2,shuffle=True)
+			q_idxs=strategy.predict2(untrain_loader,unlabeled_idxs,NUM_QUERY)
+			strategy.update(q_idxs)
+			#for train_epoch in range(10):
+			strategy.train()
+			preds = strategy.predict(dataset.get_test_data())
 			acc[rd] = dataset.cal_test_acc(preds)
 			print('testing accuracy {}'.format(acc[rd]))
-			print('\n')'''
+			print('\n')
+			
 
-			#torch.cuda.empty_cache()
-		preds = strategy.predict1(valid_queue)
-		acc[rd] = dataset.cal_test_acc(preds)
-		print('validation accuracy {}'.format(acc[rd]))
-		print('\n')
 		# print results
 		print('SEED {}'.format(SEED))
 		print(type(strategy).__name__)
 		print(acc)
 		all_acc.append(acc)
+		all_acc1.append(acc1)
 		
 		#save model
 		timestamp = re.sub('\.[0-9]*','_',str(datetime.datetime.now())).replace(" ", "_").replace("-", "").replace(":","")
@@ -225,6 +258,7 @@ if __name__ == '__main__':
 		
 	# cal mean & standard deviation
 	acc_m = []
+	acc_m1=[]
 	file_name_res_tot = DATA_NAME+ '_'  + STRATEGY_NAME + '_' + str(NUM_QUERY) + '_' + str(NUM_INIT_LB) +  '_' + str(args_input.quota) + '_normal_res_tot.txt'
 	file_res_tot =  open(os.path.join(os.path.abspath('') + '/results', '%s' % file_name_res_tot),'w')
 
@@ -238,6 +272,10 @@ if __name__ == '__main__':
 	file_res_tot.writelines('time of repeat experiments: {}'.format(args_input.iteration)+ '\n')
 
 	# result
+	for i in range(len(all_acc1)):
+		acc_m1.append(get_aubc(args_input.quota, NUM_QUERY, all_acc1[i]))
+		print("inter_acc"+str(i)+': '+str(acc_m1[i]))
+		file_res_tot.writelines(str(i)+': '+str(acc_m1[i])+'\n')
 	for i in range(len(all_acc)):
 		acc_m.append(get_aubc(args_input.quota, NUM_QUERY, all_acc[i]))
 		print(str(i)+': '+str(acc_m[i]))
@@ -266,6 +304,10 @@ if __name__ == '__main__':
 	file_res.writelines('quota: {}'.format(NUM_ROUND*NUM_QUERY)+ '\n')
 	file_res.writelines('time of repeat experiments: {}'.format(args_input.iteration)+ '\n')
 	avg_acc = np.mean(np.array(all_acc),axis=0)
+	avg_acc1 = np.mean(np.array(all_acc1),axis=0)
+	for i in range(len(avg_acc1)):
+		tmp = 'Size of training set is ' + str(args_input.initseed) + ', ' + 'inter accuracy is ' + str(round(avg_acc1[i],4)) + '.' + '\n'
+		file_res.writelines(tmp)
 	for i in range(len(avg_acc)):
 		tmp = 'Size of training set is ' + str(NUM_INIT_LB + i*NUM_QUERY) + ', ' + 'accuracy is ' + str(round(avg_acc[i],4)) + '.' + '\n'
 		file_res.writelines(tmp)
