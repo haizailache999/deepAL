@@ -89,7 +89,7 @@ args_pool = {'MNIST':
 				 'pretrained': False,
 				 'optimizer_args':{'lr': 0.001}},
 			'CIFAR100':
-				{'n_epoch': 40,    
+				{'n_epoch': 200,    
 				 'name': 'CIFAR100',
 				 'transform_train': transforms.Compose([transforms.RandomCrop(size=32, padding=4),
     				transforms.RandomHorizontalFlip(), 
