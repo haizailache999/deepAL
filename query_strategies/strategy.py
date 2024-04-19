@@ -36,7 +36,7 @@ class Strategy:
                 labeled_idxs, labeled_data = self.dataset.get_labeled_data()
                 unlabeled_idxs, unlabeled_data = self.dataset.get_unlabeled_data()
                 #print("seee",len(labeled_data),len(labeled_idxs),len(unlabeled_idxs),len(unlabeled_data))
-                print(labeled_data.X.shape[1:],labeled_data.X.shape)
+                #print(labeled_data.X.shape[1:],labeled_data.X.shape)
                 self.net.train(labeled_data)
             else:
                 self.net.train(data)
@@ -53,15 +53,22 @@ class Strategy:
         preds = self.net.predict(data)
         return preds
 
-    def train_1(self,x,y):
-        self.net.train_1(x,y)
+    def train_1(self,loader):
+        self.net.train_1(loader)
         #return output
     
-    def train_2(self,dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,loader):
-        self.net.train_2(dataset,net,args_input,args_task,NUM_QUERY,unlabeled_idxs,loader)
+    def train_2(self,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+        self.net.train_2(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
         #return idxs
+    def train_2_1(self,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
+        self.net.train_2_1(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
     def predict1(self, dataloader):
-        self.net.predict1(dataloader)
+        pred=self.net.predict1(dataloader)
+        return pred
+
+    def predict2(self,dataloader,unlabeled_idxs,init_seed):
+        result=self.net.predict2(dataloader,unlabeled_idxs,init_seed)
+        return result
 
     def predict_prob(self, data):
         probs = self.net.predict_prob(data)
