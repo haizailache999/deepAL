@@ -104,130 +104,134 @@ if __name__ == '__main__':
 		print('Round 0\ntesting accuracy {}'.format(acc[0]))
 		print('\n')
 		
-		#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
-		labeled_idxs,labeled_data=dataset.get_labeled_data()
-		num_train=len(labeled_data)
-		split = int(np.floor(0.5 * num_train))
+		for rd in range(1, NUM_ROUND+1):
+			print('Round {}'.format(rd))
+			#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
+			labeled_idxs,labeled_data=dataset.get_labeled_data()
+			num_train=len(labeled_data)
+			split = int(np.floor(0.5 * num_train))
 
-		# round 1 to rd
-			#print("inter_round",inter_round)
-		indices = np.random.permutation(len(labeled_data))
-		train_queue = torch.utils.data.DataLoader(
-			labeled_data, batch_size=NUM_QUERY,
-			sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[:split]),
-			pin_memory=True, num_workers=2)
+			# round 1 to rd
+				#print("inter_round",inter_round)
+			indices = np.random.permutation(len(labeled_data))
+			train_queue = torch.utils.data.DataLoader(
+				labeled_data, batch_size=NUM_QUERY,
+				sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[:split]),
+				pin_memory=True, num_workers=2)
 
-		valid_queue = torch.utils.data.DataLoader(
-			labeled_data, batch_size=NUM_QUERY,
-			sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[split:num_train]),
-			pin_memory=True, num_workers=2)
-			#print("this is valid queue",len(valid_queue.dataset))
-		for inter_round in range(3):
-			for step, (input, target,idxs) in enumerate(tqdm(train_queue,file=sys.stdout)):
-				input = Variable(input, requires_grad=False).cuda()
-				target = Variable(target, requires_grad=False).cuda()
-				input_search, target_search,idxs1 = next(iter(valid_queue))
-				#print(idxs1)
-				#input_search = Variable(input_search, requires_grad=False).cuda()
-				#target_search = Variable(target_search, requires_grad=False).cuda()
-				#subset = Subset(valid_queue.dataset, indices=range(step*input_search.size(0),(step+1)*input_search.size(0)))
-				subset= TensorDataset(input_search,target_search,torch.arange(0, input_search.size(0), step=1))
-				new_dataloader = DataLoader(subset, batch_size=NUM_QUERY, shuffle=True)
-				#first_subset=Subset(train_queue.dataset, indices=range(step*input.size(0),(step+1)*input.size(0)))
-				first_subset=TensorDataset(input,target,torch.arange(0, input.size(0), step=1))
-				first_dataloader = DataLoader(first_subset, batch_size=NUM_QUERY, shuffle=True)
-				#high_confident_idx = []
-				#high_confident_pseudo_label = []
-				# query  
-				#unlabeled_data[0] tensor data, [1] label, [2] 0/1
-				#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
-				#print(len(unlabeled_data))
-				#loader = DataLoader(unlabeled_data, shuffle=False, batch_size=128,num_workers=0)
-				#for batch_idx,(x, y, idxs) in enumerate(loader):
-					#x=x.to(device)
-				'''output=torch.empty(0,2)
-				loader=tqdm(loader, file=sys.stdout)
-				model1.train()
-				for batch_idx,(x, y, idxs) in enumerate(loader):
-					x=x.to(device)
-					out=model1(x)     #(batch,17)
-					output=torch.cat((output, out.to('cpu')), 0)
-				output=strategy.train_1(loader)
-				print(output.shape)
-				output_list=output.to('cpu').detach().numpy()
-				AL_numpy=get_idx.get_idxs(dataset, net, args_input, args_task,NUM_QUERY,unlabeled_idxs)
-				print(AL_numpy.shape)
-				score=np.sum(AL_numpy*output_list,axis=1)
-				print("get score")
-				ind_200 = np.argpartition(score, -200)[-200:]
-				ind_100 = np.argpartition(score, -100)[-100:]
-				unlabeled_200=np.zeros(200)
-				for num_200_pos,num_200 in enumerate(ind_200):
-					unlabeled_200[num_200_pos]=unlabeled_idxs[num_200]
-				unlabeled_100=np.zeros(200)
-				for num_100_pos,num_100 in enumerate(ind_100):
-					unlabeled_100[num_100_pos]=unlabeled_idxs[num_100]
-				mask = np.isin(unlabeled_200, unlabeled_100)
-				filtered_array = unlabeled_200[~mask]
-				#print("filt",len(filtered_array))
-				#print(len(unlabeled_idxs))
-				unlabeled_idxs_list=unlabeled_idxs.tolist()
-				next_idxs=[]
-				for element in filtered_array:
-					if element not in unlabeled_idxs_list:
-						print("empty",element)
+			valid_queue = torch.utils.data.DataLoader(
+				labeled_data, batch_size=NUM_QUERY,
+				sampler=torch.utils.data.sampler.SubsetRandomSampler(indices[split:num_train]),
+				pin_memory=True, num_workers=2)
+				#print("this is valid queue",len(valid_queue.dataset))
+			if rd==1:
+				inter_round_total=3
+			else:
+				inter_round_total=1
+			for inter_round in range(inter_round_total):
+				for step, (input, target,idxs) in enumerate(tqdm(train_queue,file=sys.stdout)):
+					input = Variable(input, requires_grad=False).cuda()
+					target = Variable(target, requires_grad=False).cuda()
+					input_search, target_search,idxs1 = next(iter(valid_queue))
+					#print(idxs1)
+					#input_search = Variable(input_search, requires_grad=False).cuda()
+					#target_search = Variable(target_search, requires_grad=False).cuda()
+					#subset = Subset(valid_queue.dataset, indices=range(step*input_search.size(0),(step+1)*input_search.size(0)))
+					subset= TensorDataset(input_search,target_search,torch.arange(0, input_search.size(0), step=1))
+					new_dataloader = DataLoader(subset, batch_size=NUM_QUERY, shuffle=True)
+					#first_subset=Subset(train_queue.dataset, indices=range(step*input.size(0),(step+1)*input.size(0)))
+					first_subset=TensorDataset(input,target,torch.arange(0, input.size(0), step=1))
+					first_dataloader = DataLoader(first_subset, batch_size=NUM_QUERY, shuffle=True)
+					#high_confident_idx = []
+					#high_confident_pseudo_label = []
+					# query  
+					#unlabeled_data[0] tensor data, [1] label, [2] 0/1
+					#unlabeled_idxs, unlabeled_data = dataset.get_unlabeled_data()
+					#print(len(unlabeled_data))
+					#loader = DataLoader(unlabeled_data, shuffle=False, batch_size=128,num_workers=0)
+					#for batch_idx,(x, y, idxs) in enumerate(loader):
+						#x=x.to(device)
+					'''output=torch.empty(0,2)
+					loader=tqdm(loader, file=sys.stdout)
+					model1.train()
+					for batch_idx,(x, y, idxs) in enumerate(loader):
+						x=x.to(device)
+						out=model1(x)     #(batch,17)
+						output=torch.cat((output, out.to('cpu')), 0)
+					output=strategy.train_1(loader)
+					print(output.shape)
+					output_list=output.to('cpu').detach().numpy()
+					AL_numpy=get_idx.get_idxs(dataset, net, args_input, args_task,NUM_QUERY,unlabeled_idxs)
+					print(AL_numpy.shape)
+					score=np.sum(AL_numpy*output_list,axis=1)
+					print("get score")
+					ind_200 = np.argpartition(score, -200)[-200:]
+					ind_100 = np.argpartition(score, -100)[-100:]
+					unlabeled_200=np.zeros(200)
+					for num_200_pos,num_200 in enumerate(ind_200):
+						unlabeled_200[num_200_pos]=unlabeled_idxs[num_200]
+					unlabeled_100=np.zeros(200)
+					for num_100_pos,num_100 in enumerate(ind_100):
+						unlabeled_100[num_100_pos]=unlabeled_idxs[num_100]
+					mask = np.isin(unlabeled_200, unlabeled_100)
+					filtered_array = unlabeled_200[~mask]
+					#print("filt",len(filtered_array))
+					#print(len(unlabeled_idxs))
+					unlabeled_idxs_list=unlabeled_idxs.tolist()
+					next_idxs=[]
+					for element in filtered_array:
+						if element not in unlabeled_idxs_list:
+							print("empty",element)
+						else:
+							next_idxs.append(unlabeled_idxs_list.index(element))
+					#next_idxs = [np.where(unlabeled_idxs == element) for element in filtered_array]
+					mydataset=myDataset(next_idxs,unlabeled_data)
+					myloader=DataLoader(mydataset, shuffle=False, batch_size=10,num_workers=0)
+					q_idxs=ind_100'''
+					'''if 'CEALSampling' in args_input.ALstrategy:
+						q_idxs, new_data = strategy.query(NUM_QUERY, rd, option = args_input.ALstrategy[13:])
 					else:
-						next_idxs.append(unlabeled_idxs_list.index(element))
-				#next_idxs = [np.where(unlabeled_idxs == element) for element in filtered_array]
-				mydataset=myDataset(next_idxs,unlabeled_data)
-				myloader=DataLoader(mydataset, shuffle=False, batch_size=10,num_workers=0)
-				q_idxs=ind_100'''
-				'''if 'CEALSampling' in args_input.ALstrategy:
-					q_idxs, new_data = strategy.query(NUM_QUERY, rd, option = args_input.ALstrategy[13:])
-				else:
-					q_idxs = strategy.query(NUM_QUERY)'''
-				'''myloader=tqdm(myloader,file=sys.stdout)
-				strategy.predict1(myloader)'''
-				if inter_round==0:
-					strategy.train_2_1(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
-				#for train_epochs in range(10):
-					#print("train_epochs",train_epochs)
-				strategy.train_2(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
-					# update
-					#strategy.update(q_idxs)
-				strategy.train_1(first_dataloader)
-				#train
-				'''if 'CEALSampling' in args_input.ALstrategy:
-					strategy.train(new_data)
-				elif args_input.ALstrategy == 'WAAL':
-					strategy.train(model_name = args_input.ALstrategy)
-				else:
-					strategy.train()'''
-				#strategy.train()
-				#clf=net(dim = 32*32*3, pretrained = False, num_classes = 10).to(device)
-				#print(dim)
-				#clf = net(dim = 32*32*3, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
-				#net=net.to(device)
-				#clf.eval()
-				'''for i_batch,batch_data in enumerate(myloader):
-					test_next,test_next_label=batch_data
-					test_next_valid=net(test_next.to(device))
-					architect.step(test_next_valid,test_next_label,device)'''
-			
-				# round rd accuracy
-				'''preds = strategy.predict(dataset.get_test_data())
-				acc[rd] = dataset.cal_test_acc(preds)
-				print('testing accuracy {}'.format(acc[rd]))
-				print('\n')'''
+						q_idxs = strategy.query(NUM_QUERY)'''
+					'''myloader=tqdm(myloader,file=sys.stdout)
+					strategy.predict1(myloader)'''
+					if rd==1 and inter_round==0:
+						strategy.train_2_1(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
+					#for train_epochs in range(10):
+						#print("train_epochs",train_epochs)
+					strategy.train_1(first_dataloader)
+					strategy.train_2(dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,new_dataloader)
+						# update
+						#strategy.update(q_idxs)
+					#train
+					'''if 'CEALSampling' in args_input.ALstrategy:
+						strategy.train(new_data)
+					elif args_input.ALstrategy == 'WAAL':
+						strategy.train(model_name = args_input.ALstrategy)
+					else:
+						strategy.train()'''
+					#strategy.train()
+					#clf=net(dim = 32*32*3, pretrained = False, num_classes = 10).to(device)
+					#print(dim)
+					#clf = net(dim = 32*32*3, pretrained = self.params['pretrained'], num_classes = self.params['num_class']).to(self.device)
+					#net=net.to(device)
+					#clf.eval()
+					'''for i_batch,batch_data in enumerate(myloader):
+						test_next,test_next_label=batch_data
+						test_next_valid=net(test_next.to(device))
+						architect.step(test_next_valid,test_next_label,device)'''
+				
+					# round rd accuracy
+					'''preds = strategy.predict(dataset.get_test_data())
+					acc[rd] = dataset.cal_test_acc(preds)
+					print('testing accuracy {}'.format(acc[rd]))
+					print('\n')'''
 
-				#torch.cuda.empty_cache()
+					#torch.cuda.empty_cache()
 			preds = strategy.predict1(valid_queue)
 			#acc1[inter_round] = dataset.cal_test_acc(preds)
 			acc1[inter_round]=(valid_queue.dataset.Y==preds).sum().item()/len(preds)
 			print('validation1 accuracy {}'.format(acc1[inter_round]))
 			print('\n')
-		for rd in range(1, NUM_ROUND+1):
-			print('Round {}'.format(rd))
 			unlabeled_idxs,unlabeled_data=dataset.get_unlabeled_data()
 			untrain_loader = torch.utils.data.DataLoader(
 				unlabeled_data, batch_size=NUM_QUERY,
