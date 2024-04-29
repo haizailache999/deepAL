@@ -61,7 +61,7 @@ args_pool = {'MNIST':
 				 'pretrained': False,
 				 'optimizer_args':{'lr': 0.001}},
 			'CIFAR10':
-				{'n_epoch': 30,   
+				{'n_epoch': 200,  
 				 'name': 'CIFAR10',
 				 'transform_train': transforms.Compose([transforms.RandomCrop(size=32, padding=4),
     				transforms.RandomHorizontalFlip(), 
@@ -73,7 +73,8 @@ args_pool = {'MNIST':
 				 'num_class':10,
 				 'pretrained': False,
 				 'optimizer':'Adam',
-				 'optimizer_args':{'lr': 0.001}},
+				 'optimizer_args':{'lr': 0.001},
+				 'optimizer_args1':{'lr': 0.0001}},
 			'CIFAR10_imb':
 				{'n_epoch': 30,   
 				 'name': 'CIFAR10_imb',
@@ -87,7 +88,7 @@ args_pool = {'MNIST':
 				 'num_class':10,
 				 'optimizer':'Adam',
 				 'pretrained': False,
-				 'optimizer_args':{'lr': 0.001}},
+				 'optimizer_args':{'lr': 0.001},'optimizer_args1':{'lr': 0.001}},
 			'CIFAR100':
 				{'n_epoch': 200,    
 				 'name': 'CIFAR100',
@@ -101,7 +102,7 @@ args_pool = {'MNIST':
 				 'num_class':100,
 				 'optimizer':'Adam',
 				 'pretrained': False,
-				 'optimizer_args':{'lr': 0.001}},
+				 'optimizer_args':{'lr': 0.001},'optimizer_args1':{'lr': 0.001}},
 			'TinyImageNet':
 				{'n_epoch': 40,    
 				 'name': 'TinyImageNet',
@@ -125,7 +126,7 @@ args_pool = {'MNIST':
 				 'pretrained': False,
 				 'optimizer_args':{'lr': 0.01}},
 			'PneumoniaMNIST':
-				{'n_epoch': 10,    
+				{'n_epoch': 200,    
 				 'name': 'PneumoniaMNIST',
 				 'transform_train':transforms.Compose([transforms.Resize(255),
                     	transforms.CenterCrop(224),
@@ -137,11 +138,12 @@ args_pool = {'MNIST':
 				 'transform':transforms.Compose([transforms.Resize(255),
                         transforms.CenterCrop(224),
 						transforms.ToTensor()]),
-				 'loader_tr_args':{'batch_size': 32, 'num_workers': 2},
-				 'loader_te_args':{'batch_size': 128, 'num_workers': 2},
+				 'loader_tr_args':{'batch_size': 32, 'num_workers': 1},
+				 'loader_te_args':{'batch_size': 128, 'num_workers': 1},
 				 'num_class':2,
 				 'optimizer':'SGD',
 				 'pretrained': False,
+				 #'image_size': 
 				 'optimizer_args':{'lr': 0.001}},
 			'waterbirds':
 				{'n_epoch': 30,  
