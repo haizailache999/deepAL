@@ -57,11 +57,11 @@ class Net:
         #loader = loader
         #output=torch.empty(0,2)
         #for batch_idx,(x, y, idxs) in enumerate(loader):
-        file = open("./loss_check7.txt", 'a')
+        #file = open("./loss_check7.txt", 'a')
         #x, y = x.to(self.device), y.to(self.device)
         for i in tqdm(range(200)):
             optimizer.zero_grad()
-            score,out,y = self.clf_1(loader)
+            score,out,y,new_score = self.clf_1(loader)
             loss = F.cross_entropy(out, y.to('cuda'))
             loss.backward()
             optimizer.step()
@@ -74,11 +74,11 @@ class Net:
                         print('after-->grad_value:',name)
             #print("after===")
             #break'''
-            file.write("loss:")
-            file.write(str(loss.item()))
-            file.write("  ")
+            #file.write("loss:")
+            #file.write(str(loss.item()))
+            #file.write("  ")
         #file.write("\n")
-        file.close()
+        #file.close()
         #output=torch.cat((output, out.to('cpu')), 0)
         #return output
     def train_2_1(self, dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader):
@@ -88,17 +88,17 @@ class Net:
         #self.clf_1 = self.net(dim = self.dim, pretrained = True, num_classes = self.params['num_class'],forward_param=1,dataset=dataset,net=net,args_input=args_input,args_task=args_task,NUM_QUERY=NUM_QUERY,labeled_idxs=labeled_idxs,loader=loader).to(self.device)
         self.clf_1.train()
         architect = Architect(self.clf_1)
-        torch.autograd.set_detect_anomaly(True)
-        file = open("./loss_check8.txt", 'a')
+        #torch.autograd.set_detect_anomaly(True)
+        #file = open("./loss_check8.txt", 'a')
         for i in tqdm(range(200)):
             '''for name, parms in self.clf_1.named_parameters():
                 #if parms.grad is not None:
                     #if '_1' in name:
                 print('before1-->grad_value:',name)'''
-            score,test_next_valid,test_next_label=self.clf_1(loader)
+            score,test_next_valid,test_next_label,new_score=self.clf_1(loader)
             #print("pp",len(loader.dataset))
-            loss,loss1,loss2=architect.step(test_next_valid,test_next_label,self.device,score,len(loader.dataset))
-            file.write("loss:")
+            loss,loss1,loss2=architect.step(test_next_valid,test_next_label,self.device,score,len(loader.dataset),i%2)
+            '''file.write("loss:")
             file.write(str(loss.item()))
             file.write("loss1:")
             file.write(str(loss1.item()))
@@ -107,7 +107,7 @@ class Net:
             #file.write("\n")
             file.write("\n")
         file.write("\n")
-        file.close()
+        file.close()'''
         #return idxs
 
     def predict(self, data):
@@ -124,26 +124,43 @@ class Net:
 
     def predict2(self, loader,unlabeled_idxs,init_seed):
         self.clf_1.eval()
-        result=[]
+        #result=[]
         with torch.no_grad():
-            score,test_next_valid,test_next_label=self.clf_1(loader)
+            score,test_next_valid,test_next_label,new_score=self.clf_1(loader)
+        '''num=0
         for i in range(len(score)):
-            if score[i]==1:
+            if score[i]>0.5:
+                num+=1
+        print("this is num",num)
+        not_list=[]
+        for i in range(len(score)):
+            if score[i]>0.5:
                 result.append(unlabeled_idxs[i])
+            else:
+                not_list.append(i)
             if len(result)>=init_seed:
                 break
+        if len(result)<1000:
+            for i in not_list:
+                result.append(unlabeled_idxs[i])
+                if len(result)==1000:
+                    break'''
+        #print("this is result",len(result))
+        #result=np.argsort(new_score)[:1000]
+        result=np.argsort(new_score)[-1000:][::-1]
+        result=sorted(result.tolist())
         return result
 
     def predict1(self, dataloader):
-        self.clf.eval()
+        self.clf_1.eval()
         preds = torch.zeros(len(dataloader.dataset), dtype=dataloader.dataset.Y.dtype)
         loader = dataloader
         with torch.no_grad():
-            for x, y, idxs in loader:
-                x, y = x.to(self.device), y.to(self.device)
-                out, e1 = self.clf(x)
-                pred = out.max(1)[1]
-                preds[idxs] = pred.cpu()
+            #for x, y, idxs in loader:
+            score,test_next_valid,test_next_label,new_score=self.clf_1(loader)
+            #out, e1 = self.clf(x)
+            pred = test_next_valid.max(1)[1]
+            preds[idxs] = pred.cpu()
         return preds
 	
     '''def predict1(self,loader):
@@ -357,7 +374,7 @@ class CIFAR10_Net(nn.Module):
 		confidence_interval = gmm.sample(n_samples=10000)[0]
 		interval_max = np.percentile(confidence_interval, 98)
 		#sigmoid_output = 1 / (1 + torch.exp(-score))
-		sigmoid_output=torch.sigmoid(100 * (interval_max-score))
+		sigmoid_output=torch.sigmoid(100 * (score-interval_max))
 		#print("thresholded_output",sigmoid_output.requires_grad)
 		'''one_tensor = torch.tensor(1.0, requires_grad=True)
 		zero_tensor = torch.tensor(0.0, requires_grad=True)
@@ -370,7 +387,7 @@ class CIFAR10_Net(nn.Module):
 			else:
 				result[i]=0.9'''
 		#print("the",thresholded_output.device)
-		return sigmoid_output
+		return sigmoid_output,new_score
 
 	def forward(self, x):
 		dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs=self.dataset,self.net,self.args_input,self.args_task,self.NUM_QUERY,self.labeled_idxs
@@ -385,6 +402,7 @@ class CIFAR10_Net(nn.Module):
 			output=torch.empty(0,2).to('cuda')
 			#with torch.no_grad():
 			#print(loader[0])
+			#print(len(loader.dataset))
 			for batch_idx,(x, y, idxs) in enumerate(loader):
 				#print("count please")
 				x=x.to('cuda')
@@ -402,7 +420,7 @@ class CIFAR10_Net(nn.Module):
 				#torch.cuda.empty_cache()
 			#print("output shape",output.shape)
 			#print("grad?",self.classifier_1.grad)
-			score=self.forward_mid(output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
+			score,new_score=self.forward_mid(output,dataset,net,args_input,args_task,NUM_QUERY,labeled_idxs,loader)
 			#print("score",score.requires_grad)
 			myloader=loader
 			for i_batch,batch_data in enumerate(myloader):
@@ -413,7 +431,7 @@ class CIFAR10_Net(nn.Module):
 			'''feature  = self.features(x.to('cuda'))
 			test_next = feature.view(feature.size(0), -1)		
 			test_next_valid = self.classifier(test_next)'''
-			return score,test_next_valid,test_next_label
+			return score,test_next_valid,test_next_label,new_score
 	
 	def get_embedding_dim(self):
 		return self.dim
@@ -448,7 +466,7 @@ class PneumoniaMNIST_Net(nn.Module):
 		features_tmp_1=nn.Sequential(*list(resnet18_1.children())[:-1])
 		features_tmp_1[0] = nn.Conv2d(1, 64, kernel_size=3, stride=1, padding=1, bias=False)
 		self.features_1 = nn.Sequential(*list(features_tmp_1))
-		self.classifier_1 = nn.Linear(512, 7)
+		self.classifier_1 = nn.Linear(512, 4)
 		self.forward_param=forward_param
 		self._arch_parameters=[]
 		for name,parameters in self.features_1.named_parameters():
@@ -486,7 +504,7 @@ class PneumoniaMNIST_Net(nn.Module):
 			return output, x
 		else:
 			ids,labeled_data=dataset.get_labeled_data()
-			output=torch.empty(0,7)
+			output=torch.empty(0,4)
 			#with torch.no_grad():
 			for batch_idx,(x, y, idxs) in enumerate(loader):
 				x=x.to('cuda')
